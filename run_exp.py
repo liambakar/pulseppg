@@ -3,6 +3,7 @@ import argparse
 import torch
 import os
 import csv
+import json
 import numpy as np
 
 from pulseppg.utils.utils import printlog,  init_dl_program, count_parameters
@@ -38,6 +39,22 @@ if __name__ == "__main__":
                         action='store_true', default=False)
     parser.add_argument("--resume_on", help="resume unfinished model training",
                         action='store_true', default=False)
+    parser.add_argument("--pre_pilot_eval", help="Preprocess pre-pilot data and export PulsePPG embeddings without training",
+                        action='store_true', default=False)
+    parser.add_argument("--pre_pilot_cluster", help="Cluster pre-pilot embeddings and create timeline visualizations",
+                        action='store_true', default=False)
+    parser.add_argument("--pre_pilot_overwrite", help="Overwrite existing pre-pilot preprocessing output before exporting embeddings",
+                        action='store_true', default=False)
+    parser.add_argument("--pre_pilot_checkpoint", help="Checkpoint name to use for pre-pilot embedding export",
+                        default="best")
+    parser.add_argument("--pre_pilot_output_dir", help="Directory for pre-pilot embedding outputs",
+                        default="pulseppg/data/datasets/pre_pilot_outputs")
+    parser.add_argument("--pre_pilot_max_chunks", help="Optional cap for pre-pilot embedding export smoke tests",
+                        type=int, default=None)
+    parser.add_argument("--pre_pilot_n_clusters", help="Number of clusters for pre-pilot embedding clustering",
+                        type=int, default=6)
+    parser.add_argument("--device", help="Device for pre-pilot embedding export, e.g. cuda or cpu",
+                        default=None)
     args = parser.parse_args()
 
 
@@ -46,6 +63,34 @@ if __name__ == "__main__":
     CONFIGFILE = args.config
     config = all_expconfigs[CONFIGFILE]
     config.set_rundir(CONFIGFILE)
+
+    if args.pre_pilot_eval or args.pre_pilot_cluster:
+        from pathlib import Path
+        from pulseppg.data.process.PRE_PILOT import (
+            cluster_pre_pilot_embeddings,
+            export_pre_pilot_embeddings,
+        )
+
+        summary = {}
+        if args.pre_pilot_eval:
+            summary["embedding_export"] = export_pre_pilot_embeddings(
+                model_config_key=CONFIGFILE,
+                checkpoint=args.pre_pilot_checkpoint,
+                output_dir=args.pre_pilot_output_dir,
+                device=args.device,
+                preprocess_overwrite=args.pre_pilot_overwrite,
+                max_chunks=args.pre_pilot_max_chunks,
+            )
+        if args.pre_pilot_cluster:
+            output_dir = Path(args.pre_pilot_output_dir)
+            summary["clustering"] = cluster_pre_pilot_embeddings(
+                embeddings_path=output_dir / f"{CONFIGFILE}_{args.pre_pilot_checkpoint}_embeddings.npz",
+                index_path=output_dir / f"{CONFIGFILE}_{args.pre_pilot_checkpoint}_embedding_index.csv",
+                output_dir=output_dir / "clusters",
+                n_clusters=args.pre_pilot_n_clusters,
+            )
+        print(json.dumps(summary, indent=2))
+        raise SystemExit(0)
 
     init_dl_program(config=config, device_name=0, max_threads=torch.get_num_threads())
 

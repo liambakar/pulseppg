@@ -1,6 +1,7 @@
 pulseppg/data/datasets/*
 pulseppg/experiments/out/*
 .vscode/*
+.DS_STORE
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
