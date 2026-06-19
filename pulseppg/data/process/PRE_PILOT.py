@@ -266,7 +266,8 @@ def export_pre_pilot_embeddings(
     checkpoint_path = run_dir / f"checkpoint_{checkpoint}.pkl"
     if not checkpoint_path.exists():
         raise FileNotFoundError(
-            f"Missing checkpoint {checkpoint_path}. Download weights or train the base model first."
+            f"Missing checkpoint {checkpoint_path}. Download model weights first with "
+            "`bash ./download_model.sh`, or point --checkpoint at an existing checkpoint."
         )
 
     if device is None:
@@ -342,9 +343,15 @@ def cluster_pre_pilot_embeddings(
     embeddings_path = Path(embeddings_path)
     index_path = Path(index_path)
     if not embeddings_path.exists():
-        raise FileNotFoundError(f"Missing embeddings file: {embeddings_path}")
+        raise FileNotFoundError(
+            f"Missing embeddings file: {embeddings_path}. Export embeddings first with "
+            "`python run_exp.py --config pulseppg --pre_pilot_eval`."
+        )
     if not index_path.exists():
-        raise FileNotFoundError(f"Missing embedding index CSV: {index_path}")
+        raise FileNotFoundError(
+            f"Missing embedding index CSV: {index_path}. Export embeddings first with "
+            "`python run_exp.py --config pulseppg --pre_pilot_eval`."
+        )
 
     z = np.load(embeddings_path)
     embeddings = z["embeddings"]
@@ -737,9 +744,23 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-    preprocess_keys = PrePilotPreprocessConfig.__dataclass_fields__.keys()
-    preprocess_kwargs = {key: getattr(args, key) for key in preprocess_keys}
-    summary = preprocess_pre_pilot(PrePilotPreprocessConfig(**preprocess_kwargs))
+    preprocess_config = PrePilotPreprocessConfig(
+        raw_dir=args.raw_dir,
+        output_dir=args.output_dir,
+        target_fs=args.target_fs,
+        chunk_seconds=args.chunk_seconds,
+        signal_column=args.signal_column,
+        time_column=args.time_column,
+        time_unit=args.time_unit,
+        seed=args.seed,
+        min_chunks_per_session=args.min_chunks_per_session,
+        overwrite=args.overwrite,
+    )
+
+    summary = {}
+    if not args.embed and not args.cluster:
+        summary["preprocessing"] = preprocess_pre_pilot(preprocess_config)
+
     if args.embed:
         summary["embedding_export"] = export_pre_pilot_embeddings(
             model_config_key=args.model_config,
@@ -748,9 +769,11 @@ def main() -> None:
             output_dir=args.embedding_output_dir,
             batch_size=args.batch_size,
             device=args.device,
-            preprocess_if_missing=False,
+            preprocess_if_missing=True,
+            preprocess_overwrite=args.overwrite,
             max_chunks=args.max_chunks,
         )
+
     if args.cluster:
         cluster_output_dir = args.cluster_output_dir
         if cluster_output_dir is None:
