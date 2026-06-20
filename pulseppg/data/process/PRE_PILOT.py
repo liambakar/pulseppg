@@ -36,6 +36,11 @@ DATASET_ROOT = Path(__file__).resolve().parents[1] / "datasets"
 DEFAULT_RAW_DIR = DATASET_ROOT / "pre_pilot"
 DEFAULT_OUTPUT_DIR = DATASET_ROOT / "pre_pilot_ssl"
 DEFAULT_EMBEDDING_DIR = DATASET_ROOT / "pre_pilot_outputs"
+DEFAULT_BPM_PROBE_DIR = (
+    Path("pulseppg/experiments/out/pulseppg")
+    / "PPG-DaLiA | HR | Linear Probe"
+    / "linear_probe"
+)
 ADC_MAX = 4_194_303.0
 
 
@@ -414,6 +419,85 @@ def cluster_pre_pilot_embeddings(
     }
 
 
+def predict_pre_pilot_bpm(
+    embeddings_path: str | Path = DEFAULT_EMBEDDING_DIR / "pulseppg_best_embeddings.npz",
+    index_path: str | Path = DEFAULT_EMBEDDING_DIR / "pulseppg_best_embedding_index.csv",
+    probe_dir: str | Path = DEFAULT_BPM_PROBE_DIR,
+    output_dir: str | Path = DEFAULT_EMBEDDING_DIR / "bpm",
+    chunk_seconds: float = 30.0,
+) -> Dict[str, object]:
+    import joblib
+
+    embeddings_path = Path(embeddings_path)
+    index_path = Path(index_path)
+    probe_dir = Path(probe_dir)
+    output_dir = Path(output_dir)
+
+    if not embeddings_path.exists():
+        raise FileNotFoundError(
+            f"Missing embeddings file: {embeddings_path}. Export embeddings first with "
+            "`python run_exp.py --config pulseppg --pre_pilot_eval`."
+        )
+    if not index_path.exists():
+        raise FileNotFoundError(
+            f"Missing embedding index CSV: {index_path}. Export embeddings first with "
+            "`python run_exp.py --config pulseppg --pre_pilot_eval`."
+        )
+
+    scaler_path = probe_dir / "checkpoint_scaler_best.joblib"
+    probe_path = probe_dir / "checkpoint_cv_best.joblib"
+    if not scaler_path.exists() or not probe_path.exists():
+        raise FileNotFoundError(
+            f"Missing BPM probe files in {probe_dir}. Train the HR regression probe first with "
+            "`python run_exp.py --config pulseppg --retrain_eval` after enabling the "
+            "PPG-DaLiA HR Base_EvalConfig, or pass --bpm_probe_dir to an existing probe."
+        )
+
+    z = np.load(embeddings_path)
+    embeddings = z["embeddings"]
+    index = pd.read_csv(index_path)
+    if len(index) != len(embeddings):
+        raise ValueError(
+            f"Index rows ({len(index)}) do not match embeddings ({len(embeddings)})"
+        )
+
+    scaler = joblib.load(scaler_path)
+    probe = joblib.load(probe_path)
+    bpm_pred = probe.predict(scaler.transform(embeddings))
+
+    predictions = index.copy()
+    predictions["chunk_index"] = predictions["chunk_file"].map(_chunk_index_from_name)
+    predictions["time_minutes"] = predictions["chunk_index"] * chunk_seconds / 60.0
+    predictions["predicted_bpm"] = bpm_pred
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    predictions_path = output_dir / "pre_pilot_bpm_predictions.csv"
+    timeline_dir = output_dir / "timelines"
+    timeline_dir.mkdir(parents=True, exist_ok=True)
+
+    predictions.to_csv(predictions_path, index=False)
+    timeline_paths = _save_bpm_timeline_plots(predictions, timeline_dir)
+
+    summary_path = output_dir / "pre_pilot_bpm_summary.csv"
+    summary = (
+        predictions.groupby("session_id")["predicted_bpm"]
+        .agg(["count", "mean", "median", "std", "min", "max"])
+        .reset_index()
+    )
+    summary.to_csv(summary_path, index=False)
+
+    return {
+        "embeddings_path": str(embeddings_path),
+        "index_path": str(index_path),
+        "probe_dir": str(probe_dir),
+        "predictions_csv": str(predictions_path),
+        "summary_csv": str(summary_path),
+        "timeline_dir": str(timeline_dir),
+        "num_timeline_plots": len(timeline_paths),
+        "num_chunks": int(len(predictions)),
+    }
+
+
 def _chunk_index_from_name(chunk_file: str) -> int:
     stem = Path(chunk_file).stem
     try:
@@ -489,6 +573,34 @@ def _save_cluster_timeline_plots(
         cbar.set_label("Cluster")
         fig.tight_layout()
         path = timeline_dir / f"{session_id}_cluster_timeline.png"
+        fig.savefig(path, dpi=180)
+        plt.close(fig)
+        paths.append(str(path))
+    return paths
+
+
+def _save_bpm_timeline_plots(
+    predictions: pd.DataFrame,
+    timeline_dir: Path,
+) -> List[str]:
+    plt = _get_pyplot()
+    paths = []
+    for session_id, session_df in predictions.groupby("session_id", sort=True):
+        session_df = session_df.sort_values("chunk_index")
+        fig, ax = plt.subplots(figsize=(12, 4))
+        ax.plot(
+            session_df["time_minutes"],
+            session_df["predicted_bpm"],
+            marker="o",
+            linewidth=1.2,
+            markersize=3,
+        )
+        ax.set_title(f"Predicted BPM Timeline: {session_id}")
+        ax.set_xlabel("Time (minutes)")
+        ax.set_ylabel("Predicted BPM")
+        ax.grid(alpha=0.25)
+        fig.tight_layout()
+        path = timeline_dir / f"{session_id}_bpm_timeline.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -731,14 +843,17 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--embed", action="store_true")
     parser.add_argument("--cluster", action="store_true")
+    parser.add_argument("--bpm", action="store_true")
     parser.add_argument("--model_config", default="pulseppg")
     parser.add_argument("--checkpoint", default="best")
     parser.add_argument("--embedding_output_dir", default=str(DEFAULT_EMBEDDING_DIR))
+    parser.add_argument("--bpm_probe_dir", default=str(DEFAULT_BPM_PROBE_DIR))
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--device", default=None)
     parser.add_argument("--max_chunks", type=int, default=None)
     parser.add_argument("--n_clusters", type=int, default=6)
     parser.add_argument("--cluster_output_dir", default=None)
+    parser.add_argument("--bpm_output_dir", default=None)
     return parser.parse_args()
 
 
@@ -758,7 +873,7 @@ def main() -> None:
     )
 
     summary = {}
-    if not args.embed and not args.cluster:
+    if not args.embed and not args.cluster and not args.bpm:
         summary["preprocessing"] = preprocess_pre_pilot(preprocess_config)
 
     if args.embed:
@@ -785,6 +900,19 @@ def main() -> None:
             / f"{args.model_config}_{args.checkpoint}_embedding_index.csv",
             output_dir=cluster_output_dir,
             n_clusters=args.n_clusters,
+            chunk_seconds=args.chunk_seconds,
+        )
+    if args.bpm:
+        bpm_output_dir = args.bpm_output_dir
+        if bpm_output_dir is None:
+            bpm_output_dir = str(Path(args.embedding_output_dir) / "bpm")
+        summary["bpm_prediction"] = predict_pre_pilot_bpm(
+            embeddings_path=Path(args.embedding_output_dir)
+            / f"{args.model_config}_{args.checkpoint}_embeddings.npz",
+            index_path=Path(args.embedding_output_dir)
+            / f"{args.model_config}_{args.checkpoint}_embedding_index.csv",
+            probe_dir=args.bpm_probe_dir,
+            output_dir=bpm_output_dir,
             chunk_seconds=args.chunk_seconds,
         )
     print(json.dumps(summary, indent=2))

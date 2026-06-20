@@ -43,6 +43,8 @@ if __name__ == "__main__":
                         action='store_true', default=False)
     parser.add_argument("--pre_pilot_cluster", help="Cluster pre-pilot embeddings and create timeline visualizations",
                         action='store_true', default=False)
+    parser.add_argument("--pre_pilot_bpm", help="Apply a trained BPM/HR regression probe to pre-pilot embeddings",
+                        action='store_true', default=False)
     parser.add_argument("--pre_pilot_overwrite", help="Overwrite existing pre-pilot preprocessing output before exporting embeddings",
                         action='store_true', default=False)
     parser.add_argument("--pre_pilot_checkpoint", help="Checkpoint name to use for pre-pilot embedding export",
@@ -53,6 +55,8 @@ if __name__ == "__main__":
                         type=int, default=None)
     parser.add_argument("--pre_pilot_n_clusters", help="Number of clusters for pre-pilot embedding clustering",
                         type=int, default=6)
+    parser.add_argument("--bpm_probe_dir", help="Directory containing checkpoint_scaler_best.joblib and checkpoint_cv_best.joblib",
+                        default="pulseppg/experiments/out/pulseppg/PPG-DaLiA | HR | Linear Probe/linear_probe")
     parser.add_argument("--device", help="Device for pre-pilot embedding export, e.g. cuda or cpu",
                         default=None)
     args = parser.parse_args()
@@ -64,11 +68,12 @@ if __name__ == "__main__":
     config = all_expconfigs[CONFIGFILE]
     config.set_rundir(CONFIGFILE)
 
-    if args.pre_pilot_eval or args.pre_pilot_cluster:
+    if args.pre_pilot_eval or args.pre_pilot_cluster or args.pre_pilot_bpm:
         from pathlib import Path
         from pulseppg.data.process.PRE_PILOT import (
             cluster_pre_pilot_embeddings,
             export_pre_pilot_embeddings,
+            predict_pre_pilot_bpm,
         )
 
         summary = {}
@@ -88,6 +93,14 @@ if __name__ == "__main__":
                 index_path=output_dir / f"{CONFIGFILE}_{args.pre_pilot_checkpoint}_embedding_index.csv",
                 output_dir=output_dir / "clusters",
                 n_clusters=args.pre_pilot_n_clusters,
+            )
+        if args.pre_pilot_bpm:
+            output_dir = Path(args.pre_pilot_output_dir)
+            summary["bpm_prediction"] = predict_pre_pilot_bpm(
+                embeddings_path=output_dir / f"{CONFIGFILE}_{args.pre_pilot_checkpoint}_embeddings.npz",
+                index_path=output_dir / f"{CONFIGFILE}_{args.pre_pilot_checkpoint}_embedding_index.csv",
+                probe_dir=args.bpm_probe_dir,
+                output_dir=output_dir / "bpm",
             )
         print(json.dumps(summary, indent=2))
         raise SystemExit(0)
