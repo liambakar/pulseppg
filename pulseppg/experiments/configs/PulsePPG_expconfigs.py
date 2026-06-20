@@ -8,26 +8,26 @@ from pulseppg.models.RelCon.RelCon_Model import RelCon_ModelConfig
 
 allpulseppg_expconfigs = {}
 
-allpulseppg_expconfigs["pulseppg"] = RelCon_ModelConfig(
+allpulseppg_expconfigs['pulseppg'] = RelCon_ModelConfig(
     withinuser_cands=1,
     encoder_dims=[0],
-    motifdist_expconfig_key="motifdist",
+    motifdist_expconfig_key='motifdist',
     data_config=SSLDataConfig(
-        data_folder="/disk1/maxmithun/harmfulstressors/data/ppg_acc_np/",
-        data_normalizer_path="/disk1/maxmithun/harmfulstressors/data/ppg_acc_np/dict_user_ppg_mean_std_per.pickle",
+        data_folder='/disk1/maxmithun/harmfulstressors/data/ppg_acc_np/',
+        data_normalizer_path='/disk1/maxmithun/harmfulstressors/data/ppg_acc_np/dict_user_ppg_mean_std_per.pickle',
         data_clipping=True,
     ),
     net_config=Base_NetConfig(
-        net_folder="ResNet1D",
-        net_file="ResNet1D_Net",
+        net_folder='ResNet1D',
+        net_file='ResNet1D_Net',
         params={
-            "in_channels": 1,
-            "base_filters": 128,
-            "kernel_size": 11,  # 15 -> 30 -> 60 -> 120 -> 240 -> 480
-            "stride": 2,
-            "groups": 1,
-            "n_block": 12,
-            "finalpool": "max",
+            'in_channels': 1,
+            'base_filters': 128,
+            'kernel_size': 11,  # 15 -> 30 -> 60 -> 120 -> 240 -> 480
+            'stride': 2,
+            'groups': 1,
+            'n_block': 12,
+            'finalpool': 'max',
         },
     ),
     epochs=20,
@@ -38,16 +38,16 @@ allpulseppg_expconfigs["pulseppg"] = RelCon_ModelConfig(
         ###########################################################################
         ################### LINEAR PROBE EVAL CONFIGS #############################
         ###########################################################################
-        # Base_EvalConfig(
-        #     name="PPG-DaLiA | HR | Linear Probe",
-        #     model_folder="Regress",
-        #     model_file="linear_probe",
-        #     data_config=SupervisedDataConfig(
-        #        data_folder="pulseppg/data/datasets/dalia/",
-        #        X_annotates=["_ppg_50Hz"],
-        #        y_annotate="_hr"
-        #     ),
-        # ),
+        Base_EvalConfig(
+            name='PPG-DaLiA | HR | Linear Probe',
+            model_folder='Regress',
+            model_file='linear_probe',
+            data_config=SupervisedDataConfig(
+                data_folder='pulseppg/data/datasets/dalia/',
+                X_annotates=['_ppg_50Hz'],
+                y_annotate='_hr',
+            ),
+        ),
         # Base_EvalConfig(
         #     name="PPG-DaLiA | Activity | Linear Probe",
         #     model_folder="Classify",
@@ -58,16 +58,16 @@ allpulseppg_expconfigs["pulseppg"] = RelCon_ModelConfig(
         #        y_annotate="_act"
         #     ),
         # ),
-        Base_EvalConfig(
-            name="WESAD | Stress (2) | Linear Probe",
-            model_folder="Classify",
-            model_file="linear_probe",
-            data_config=SupervisedDataConfig(
-                data_folder="pulseppg/data/datasets/wesad/binary",
-                X_annotates=["_ppg_50Hz"],
-                y_annotate="_stress_50Hz",
-            ),
-        ),
+        # Base_EvalConfig(
+        #     name="WESAD | Stress (2) | Linear Probe",
+        #     model_folder="Classify",
+        #     model_file="linear_probe",
+        #     data_config=SupervisedDataConfig(
+        #         data_folder="pulseppg/data/datasets/wesad/binary",
+        #         X_annotates=["_ppg_50Hz"],
+        #         y_annotate="_stress_50Hz",
+        #     ),
+        # ),
         # Base_EvalConfig(
         #     name="WESAD | Stress (4) | Linear Probe",
         #     model_folder="Classify",
